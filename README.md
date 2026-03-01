@@ -1,3 +1,20 @@
+# SwarmOps Twin
+### Simulation-first multi-robot fleet coordination benchmark (engine-first)
+
+[![status](https://img.shields.io/badge/status-Phase%201%20Complete-brightgreen)](https://github.com/Jarvisp7/swarmops-twin)
+![python](https://img.shields.io/badge/python-3.11%2B-blue)
+![roadmap](https://img.shields.io/badge/roadmap-Phase%201.5%20Next-yellow)
+![license](https://img.shields.io/badge/license-MIT-lightgrey)
+
+---
+
+## Overview
+
+
+
+
+
+
 ## Project Structure
 
 ```
