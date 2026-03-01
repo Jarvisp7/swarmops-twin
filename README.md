@@ -1,38 +1,45 @@
-\# SwarmOps Twin
+## Project Structure
 
+```
+swarmops_twin/
+└── sim/
+    ├── core.py                  # Task model + Fleet Manager + state machine + metrics
+    ├── allocator_baseline.py    # FIFO + nearest-idle allocation strategy
+    ├── run_headless.py          # Simulation runner (20 Hz)
+    └── __init__.py
+```
 
+---
 
-Simulation-first multi-robot fleet coordination benchmark.
+## Architecture (Diagram)
 
-
-
-\## Phase 1
-
-
-
-Deterministic coordination engine featuring:
-
-
-
-\- 3 simulated robots
-
-\- FIFO + nearest allocation strategy
-
-\- Dynamic pickup → dropoff task generation
-
-\- Real-time performance metrics
-
-\- Overload behavior validation
-
-
-
-\## Run
-
-
-
-python -m sim.run\_headless
-
-
-
-Status: Phase 1 complete.
-
+```
+              +----------------------+
+              |     TaskGenerator    |
+              | (stochastic arrivals)|
+              +----------+-----------+
+                         |
+                         v
+        +----------------+------------------+
+        |              FleetManager         |
+        |  - task queue (FIFO)              |
+        |  - robot registry                 |
+        |  - state machine tick             |
+        |  - metrics collection             |
+        +----------------+------------------+
+                         |
+                         v
+              +----------+-----------+
+              |  BaselineAllocator   |
+              | FIFO + nearest idle  |
+              +----------+-----------+
+                         |
+               assigns task to robot
+                         |
+                         v
+         +---------------+------------------+
+         |        Robot State Machine       |
+         | IDLE → TO_PICKUP → PICKING       |
+         |      → TO_DROPOFF → DROPPING     |
+         +----------------------------------+
+```
