@@ -1,34 +1,58 @@
 import time
-from sim.core import Station, Robot, FleetManager, TaskGenerator
+from sim.core import (EnergyNode, NodeType, Agent, AgentType,
+                      FleetManager, TaskGenerator)
 from sim.allocator_baseline import BaselineAllocator
 
 
 def main():
-    # Predefined warehouse-style stations (meters)
-    stations = {
-        # pickups
-        "P1": Station("P1", 2, 2, "PICKUP"),
-        "P2": Station("P2", 2, 8, "PICKUP"),
-        "P3": Station("P3", 2, 14, "PICKUP"),
-        # dropoffs
-        "D1": Station("D1", 18, 3, "DROPOFF"),
-        "D2": Station("D2", 18, 9, "DROPOFF"),
-        "D3": Station("D3", 18, 15, "DROPOFF"),
+    # --- California microgrid layout (meters) ---
+    nodes = {
+        # Solar arrays (west side)
+        "SOL1": EnergyNode("SOL1", 5, 5, NodeType.SOLAR),
+        "SOL2": EnergyNode("SOL2", 5, 25, NodeType.SOLAR),
+        # Substations (center)
+        "SUB1": EnergyNode("SUB1", 25, 10, NodeType.SUBSTATION),
+        "SUB2": EnergyNode("SUB2", 25, 20, NodeType.SUBSTATION),
+        # Battery storage (east)
+        "BAT1": EnergyNode("BAT1", 40, 8, NodeType.BATTERY_STORAGE),
+        "BAT2": EnergyNode("BAT2", 40, 22, NodeType.BATTERY_STORAGE),
+        # Charging station (central hub)
+        "CHG1": EnergyNode("CHG1", 22, 15, NodeType.CHARGING_STATION),
     }
 
-    # 3 robots staged in the middle
-    robots = {
-        "R1": Robot("R1", x=10, y=2),
-        "R2": Robot("R2", x=10, y=9),
-        "R3": Robot("R3", x=10, y=16),
+    # --- Agents ---
+    # 2 inspection drones (fast, higher battery drain)
+    # 3 ground service bots (slower, more efficient)
+    agents = {
+        "D1": Agent("D1", AgentType.DRONE, x=22, y=13,
+                    speed_mps=3.0, battery_drain_per_m=0.5),
+        "D2": Agent("D2", AgentType.DRONE, x=22, y=17,
+                    speed_mps=3.0, battery_drain_per_m=0.5),
+        "G1": Agent("G1", AgentType.GROUND_BOT, x=20, y=12,
+                    speed_mps=1.2, battery_drain_per_m=0.2),
+        "G2": Agent("G2", AgentType.GROUND_BOT, x=20, y=15,
+                    speed_mps=1.2, battery_drain_per_m=0.2),
+        "G3": Agent("G3", AgentType.GROUND_BOT, x=20, y=18,
+                    speed_mps=1.2, battery_drain_per_m=0.2),
     }
 
-    fm = FleetManager(stations=stations, robots=robots)
+    # assign all agents to the charging hub
+    for a in agents.values():
+        a.home_node_id = "CHG1"
+
+    fm = FleetManager(nodes=nodes, agents=agents)
     allocator = BaselineAllocator()
-    gen = TaskGenerator(pickup_ids=["P1", "P2", "P3"], dropoff_ids=["D1", "D2", "D3"], seed=7)
 
-    dt = 0.05        # 20 Hz tick
-    task_prob = 0.08 # task generation probability per tick
+    # drones inspect everything, ground bots service substations + batteries
+    inspectable = ["SOL1", "SOL2", "SUB1", "SUB2", "BAT1", "BAT2"]
+    serviceable = ["SUB1", "SUB2", "BAT1", "BAT2"]
+    gen = TaskGenerator(inspectable_ids=inspectable,
+                        serviceable_ids=serviceable, seed=7)
+
+    dt = 0.05
+    task_prob = 0.02
+    print(f"[config] dt={dt} task_prob={task_prob} seed=7 "
+          f"agents={len(agents)} (drones=2, ground=3) nodes={len(nodes)}")
     t0 = time.time()
     last_print = t0
 
@@ -37,19 +61,31 @@ def main():
 
         task = gen.maybe_generate(now, probability_per_tick=task_prob)
         if task:
+            print(f"[new_task] t={now - t0:6.1f}s  {task.task_id}  "
+                  f"{task.task_type.value:7s} -> {task.target_node_id}")
             fm.add_task(task)
 
         fm.tick(now=now, dt=dt, allocator=allocator)
 
-        if now - last_print >= 2.0:
-            util = sum(r.busy_time_s for r in fm.robots.values()) / (len(fm.robots) * max(now - t0, 1e-6))
+        if now - last_print >= 3.0:
+            total_time = max(now - t0, 1e-6)
+            util = (sum(a.busy_time_s for a in fm.agents.values())
+                    / (len(fm.agents) * total_time))
+            avg_bat = (sum(a.battery for a in fm.agents.values())
+                       / len(fm.agents))
+            charging = sum(1 for a in fm.agents.values()
+                          if a.state.value == "CHARGING")
+
             print(
-                f"tasks_done={fm.metrics.completed:4d}  "
-                f"throughput~{fm.metrics.throughput_per_min():5.2f}/min  "
-                f"avg_complete={fm.metrics.avg_completion_time():5.2f}s  "
-                f"avg_wait={fm.metrics.avg_queue_wait():5.2f}s  "
-                f"util={util*100:5.1f}%  "
-                f"queue_len={len(fm.task_queue):3d}"
+                f"[metrics] done={fm.metrics.completed:3d}  "
+                f"fail={fm.metrics.failed:2d}  "
+                f"thru~{fm.metrics.throughput_per_min():5.2f}/min  "
+                f"avg_t={fm.metrics.avg_completion_time():5.1f}s  "
+                f"wait={fm.metrics.avg_queue_wait():4.1f}s  "
+                f"util={util * 100:4.1f}%  "
+                f"bat={avg_bat:4.1f}%  "
+                f"chrg={charging}  "
+                f"queue={len(fm.task_queue):2d}"
             )
             last_print = now
 
